@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TELE-LORENZITO</title>
+<meta name="author" content="Lorenzo Moreno">
+<meta name="copyright" content="© Lorenzo Moreno">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#101A2E">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="TELE">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#101A2E; --panel:#18243D; --line:#2A3A5C; --text:#E9EEF7; --muted:#8FA0BD;
+  --live:#FF5A4E; --ext:#F2B24A;
+  --cond:"Barlow Condensed", "Arial Narrow", sans-serif;
+  --body:"Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:var(--body)}
+button{font-family:inherit}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:calc(14px + env(safe-area-inset-top,0px)) 16px 10px;max-width:760px;margin:0 auto}
+h1{font-family:var(--cond);font-weight:700;font-size:clamp(1.8rem,7vw,2.6rem);letter-spacing:.01em;margin:0;line-height:1}
+#estado{color:var(--muted);font-size:.9rem;text-align:right}
+
+.pantalla{position:sticky;top:0;z-index:5;background:var(--bg);padding:0 16px 12px;max-width:760px;margin:0 auto}
+.marco{position:relative;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+video{width:100%;height:100%;display:block;background:#000}
+.aviso{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;color:var(--muted);font-size:1rem;background:#000;pointer-events:none}
+.aviso[hidden]{display:none}
+.barra{display:flex;align-items:center;gap:8px;margin-top:10px}
+.barra button{width:46px;height:46px;flex:none;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--text);font-size:1.15rem;cursor:pointer}
+.barra button:disabled{opacity:.35;cursor:default}
+.nombre{flex:1;min-width:0;display:flex;align-items:center;gap:10px}
+.nombre .dial{font-family:var(--cond);font-weight:700;font-size:1.9rem;line-height:1;color:var(--live);min-width:1.4ch;text-align:right}
+.nombre span{font-weight:600;font-size:1.05rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+main{max-width:760px;margin:0 auto;padding:6px 16px 10px}
+h2{font-family:var(--body);font-weight:600;font-size:.95rem;color:var(--muted);margin:14px 0 8px}
+.lista{display:flex;flex-direction:column;gap:6px}
+.canal{display:flex;align-items:center;gap:14px;width:100%;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--text);text-align:left;cursor:pointer}
+.canal:hover{border-color:var(--muted)}
+.canal .dial{font-family:var(--cond);font-weight:700;font-size:2rem;line-height:1;min-width:2ch;text-align:right;color:var(--muted)}
+.canal .txt{flex:1;min-width:0}
+.canal b{display:block;font-weight:600;font-size:1.05rem}
+.canal small{display:block;color:var(--muted);font-size:.82rem;margin-top:2px}
+.canal .tipo{font-size:.8rem;white-space:nowrap}
+.canal.app .tipo{color:var(--live)}
+.canal.app .tipo::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--live);margin-right:6px;vertical-align:1px}
+.canal.web .tipo{color:var(--ext)}
+.canal.activo{background:var(--panel);border-color:var(--live)}
+.canal.activo .dial{color:var(--live)}
+button:focus-visible{outline:3px solid var(--ext);outline-offset:2px}
+
+.install{display:block;width:calc(100% - 32px);max-width:728px;margin:0 auto 12px;padding:12px;border-radius:10px;border:1px solid var(--live);background:transparent;color:var(--text);font-weight:600;font-size:1rem;cursor:pointer}
+.install[hidden]{display:none}
+footer{text-align:center;color:var(--muted);font-size:.8rem;padding:18px 16px calc(24px + env(safe-area-inset-bottom,0px))}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>TELE-LORENZITO</h1>
+  <span id="estado">Elige un canal</span>
+</header>
+<button type="button" class="install" id="install" hidden>📲 Instalar TELE-LORENZITO en el móvil</button>
+
+<section class="pantalla">
+  <div class="marco">
+    <video id="video" playsinline controls></video>
+    <div class="aviso" id="aviso">Toca un canal con punto rojo para verlo aquí</div>
+  </div>
+  <div class="barra">
+    <button id="ant" aria-label="Canal anterior">◀</button>
+    <div class="nombre"><i class="dial" id="dialActual"></i><span id="actual">Sin canal</span></div>
+    <button id="pip" aria-label="Ventana flotante" title="Ventana flotante">⧉</button>
+    <button id="full" aria-label="Pantalla completa" title="Pantalla completa">⛶</button>
+    <button id="sig" aria-label="Canal siguiente">▶</button>
+  </div>
+</section>
+
+<main>
+  <h2>Se ven dentro de la app</h2>
+  <div class="lista" id="listaApp"></div>
+  <h2>Se abren en su web oficial</h2>
+  <div class="lista" id="listaWeb"></div>
+</main>
+
+<footer>© <span id="anio">2026</span> Lorenzo Moreno. Todos los derechos reservados.</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
+<script>
+/* CANALES
+   tipo "app": señal abierta, se ve dentro de la app.
+   tipo "web": la cadena protege su señal; se abre su directo oficial. */
+const CANALES = [
+  {id:"la1",   dial:"1",  nombre:"La 1",          info:"RTVE",                tipo:"web", web:"https://www.rtve.es/play/videos/directo/la-1/"},
+  {id:"la2",   dial:"2",  nombre:"La 2",          info:"RTVE",                tipo:"web", web:"https://www.rtve.es/play/videos/directo/la-2/"},
+  {id:"a3",    dial:"3",  nombre:"Antena 3",      info:"Atresplayer",         tipo:"web", web:"https://www.atresplayer.com/directos/antena3/"},
+  {id:"cuatro",dial:"4",  nombre:"Cuatro",        info:"Mediaset Infinity",   tipo:"web", web:"https://www.mediasetinfinity.es/directo/cuatro"},
+  {id:"t5",    dial:"5",  nombre:"Telecinco",     info:"Mediaset Infinity",   tipo:"web", web:"https://www.mediasetinfinity.es/directo/telecinco"},
+  {id:"sexta", dial:"6",  nombre:"laSexta",       info:"Atresplayer",         tipo:"web", web:"https://www.atresplayer.com/directos/lasexta/"},
+  {id:"la7",   dial:"7",  nombre:"La 7",          info:"Región de Murcia",    tipo:"web", web:"https://www.la7tv.es/video/a-la-carta/la-7-en-directo/20250311215529052374.html"},
+  {id:"h24",   dial:"24", nombre:"24h",           info:"Noticias de RTVE",    tipo:"app", url:"https://ztnr.rtve.es/ztnr/1694255.m3u8"},
+  {id:"clan",  dial:"C",  nombre:"Clan",          info:"Infantil de RTVE",    tipo:"app", url:"https://ztnr.rtve.es/ztnr/5466990.m3u8"},
+  {id:"tdp",   dial:"TD", nombre:"Teledeporte",   info:"RTVE",                tipo:"web", web:"https://www.rtve.es/play/videos/directo/teledeporte/"}
+];
+
+const $ = id => document.getElementById(id);
+const video = $("video");
+let hls = null, actual = null;
+function leer(k){ try{ return localStorage.getItem("tele_" + k); }catch(e){ return null; } }
+function guardar(k, v){ try{ localStorage.setItem("tele_" + k, v); }catch(e){} }
+const enApp = () => CANALES.filter(c => c.tipo === "app");
+
+function pintar(){
+  for (const [tipo, caja] of [["app", $("listaApp")], ["web", $("listaWeb")]]){
+    caja.innerHTML = "";
+    CANALES.filter(c => c.tipo === tipo).forEach(c => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "canal " + c.tipo + (actual && actual.id === c.id ? " activo" : "");
+      b.innerHTML = '<span class="dial"></span><span class="txt"><b></b><small></small></span><span class="tipo"></span>';
+      b.querySelector(".dial").textContent = c.dial;
+      b.querySelector("b").textContent = c.nombre;
+      b.querySelector("small").textContent = c.info;
+      b.querySelector(".tipo").textContent = c.tipo === "app" ? "En directo" : "Abre su web";
+      b.onclick = () => c.tipo === "app" ? ver(c) : abrirWeb(c);
+      caja.append(b);
+    });
+  }
+}
+
+function mostrarAviso(t){ $("aviso").textContent = t; $("aviso").hidden = !t; }
+function estado(t){ $("estado").textContent = t; }
+
+function abrirWeb(c){
+  estado("Abriendo " + c.nombre + "…");
+  window.open(c.web, "_blank", "noopener");
+  setTimeout(() => estado(actual ? actual.nombre : "Elige un canal"), 2500);
+}
+
+function parar(){
+  if (hls){ hls.destroy(); hls = null; }
+  video.removeAttribute("src"); video.load();
+}
+
+function ver(c){
+  actual = c; guardar("ultimo", c.id);
+  $("actual").textContent = c.nombre; $("dialActual").textContent = c.dial;
+  pintar(); parar();
+  mostrarAviso("Sintonizando " + c.nombre + "…"); estado("Sintonizando…");
+  const listo = () => { mostrarAviso(""); estado("En directo"); };
+  const fallo = () => { mostrarAviso(c.nombre + " no responde ahora. Prueba otro canal o vuelve a tocarlo en un rato."); estado("Sin señal"); };
+  if (window.Hls && Hls.isSupported()){
+    hls = new Hls({liveSyncDurationCount: 3, enableWorker: true});
+    hls.loadSource(c.url); hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => { video.play().then(listo).catch(() => { mostrarAviso("Pulsa ▶ en el vídeo para empezar"); }); });
+    hls.on(Hls.Events.ERROR, (e, d) => {
+      if (!d.fatal) return;
+      if (d.type === Hls.ErrorTypes.NETWORK_ERROR){ hls.startLoad(); setTimeout(() => { if (video.paused && actual === c) fallo(); }, 8000); }
+      else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+      else fallo();
+    });
+  } else if (video.canPlayType("application/vnd.apple.mpegurl")){
+    video.src = c.url;
+    video.play().then(listo).catch(() => mostrarAviso("Pulsa ▶ en el vídeo para empezar"));
+    video.onerror = fallo;
+  } else fallo();
+  if ("mediaSession" in navigator){
+    navigator.mediaSession.metadata = new MediaMetadata({title: c.nombre, artist: "TELE-LORENZITO", artwork: [{src: "icon-512.png", sizes: "512x512", type: "image/png"}]});
+  }
+}
+video.addEventListener("playing", () => { mostrarAviso(""); estado("En directo"); });
+
+function saltar(n){
+  const l = enApp(); if (!l.length) return;
+  let i = actual ? l.findIndex(c => c.id === actual.id) : -1;
+  i = (i + n + l.length) % l.length;
+  ver(l[i]);
+}
+$("ant").onclick = () => saltar(-1);
+$("sig").onclick = () => saltar(1);
+
+$("full").onclick = async () => {
+  const m = document.querySelector(".marco");
+  try{
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else { await (m.requestFullscreen ? m.requestFullscreen() : video.webkitEnterFullscreen()); screen.orientation?.lock?.("landscape").catch(() => {}); }
+  }catch(e){ try{ video.webkitEnterFullscreen(); }catch(_){} }
+};
+document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) screen.orientation?.unlock?.(); });
+$("pip").onclick = async () => {
+  try{
+    if (document.pictureInPictureElement) await document.exitPictureInPicture();
+    else await video.requestPictureInPicture();
+  }catch(e){ estado("Ventana flotante no disponible"); }
+};
+if (!document.pictureInPictureEnabled) $("pip").disabled = true;
+if ("mediaSession" in navigator){
+  try{ navigator.mediaSession.setActionHandler("previoustrack", () => saltar(-1)); }catch(e){}
+  try{ navigator.mediaSession.setActionHandler("nexttrack", () => saltar(1)); }catch(e){}
+}
+
+// Botón para instalar la app
+let installEvt = null;
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; $("install").hidden = false; });
+window.addEventListener("appinstalled", () => { $("install").hidden = true; installEvt = null; estado("TELE-LORENZITO instalada"); });
+$("install").onclick = async () => {
+  if (installEvt){ installEvt.prompt(); try{ await installEvt.userChoice; }catch(e){} installEvt = null; $("install").hidden = true; return; }
+  estado("En iPhone: Compartir y «Añadir a pantalla de inicio»");
+};
+const instalada = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !instalada) $("install").hidden = false;
+
+$("anio").textContent = new Date().getFullYear();
+pintar();
+const ult = CANALES.find(c => c.id === leer("ultimo") && c.tipo === "app");
+if (ult){ actual = ult; $("actual").textContent = ult.nombre; $("dialActual").textContent = ult.dial; pintar(); mostrarAviso("Toca " + ult.nombre + " abajo para volver a verlo"); }
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>
