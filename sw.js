@@ -1,5 +1,5 @@
 // TELE-LORENZITO: guarda solo la propia app para que abra rápido. Las emisiones van siempre por red.
-const CACHE = "tele-v4";
+const CACHE = "tele-v5";
 const APP = ["./", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(APP))); self.skipWaiting(); });
 self.addEventListener("activate", e => {
