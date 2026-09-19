@@ -1,5 +1,5 @@
 // TELE-LORENZITO: guarda solo la propia app para que abra rápido. Las emisiones van siempre por red.
-const CACHE = "tele-v3";
+const CACHE = "tele-v4";
 const APP = ["./", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(APP))); self.skipWaiting(); });
 self.addEventListener("activate", e => {
@@ -9,7 +9,8 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
   if (url.origin !== location.origin || e.request.method !== "GET") return;
-  e.respondWith(fetch(e.request).then(r => {
+  // no-cache: pregunta siempre al servidor si hay versión nueva (así las actualizaciones llegan al momento)
+  e.respondWith(fetch(e.request.url, {cache: "no-cache"}).then(r => {
     const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return r;
   }).catch(() => caches.match(e.request)));
 });
