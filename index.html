@@ -254,7 +254,8 @@ const APP_VERSION = "2026.09.19-3";
 (() => {
   const prev = leer("version");
   guardar("version", APP_VERSION);
-  const yaUsada = prev !== null || leer("ultimo") !== null || leer("abierta") !== null;  // no avisar la primera vez que se instala
+  const yaUsada = prev !== null || leer("ultimo") !== null || leer("abierta") !== null
+    || !!(navigator.serviceWorker && navigator.serviceWorker.controller);  // ya se había abierto antes; la primera instalación no avisa
   guardar("abierta", "1");
   if (prev !== APP_VERSION && yaUsada){
     const t = $("toast");
