@@ -60,6 +60,8 @@ button:focus-visible{outline:3px solid var(--ext);outline-offset:2px}
 .install{display:block;width:calc(100% - 32px);max-width:728px;margin:0 auto 12px;padding:12px;border-radius:10px;border:1px solid var(--live);background:transparent;color:var(--text);font-weight:600;font-size:1rem;cursor:pointer}
 .install[hidden]{display:none}
 footer{text-align:center;color:var(--muted);font-size:.8rem;padding:18px 16px calc(24px + env(safe-area-inset-bottom,0px))}
+.toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 16px);transform:translate(-50%,-20px);max-width:92%;width:max-content;padding:10px 16px;border-radius:12px;background:var(--panel);color:var(--text);border:1px solid var(--line);font-size:.9rem;text-align:center;box-shadow:0 8px 28px rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:50}
+.toast.show{opacity:1;transform:translate(-50%,0)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -93,6 +95,7 @@ footer{text-align:center;color:var(--muted);font-size:.8rem;padding:18px 16px ca
 </main>
 
 <footer>© <span id="anio">2026</span> Lorenzo Moreno. Todos los derechos reservados.</footer>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
 <script>
@@ -245,6 +248,21 @@ $("install").onclick = async () => {
 };
 const instalada = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
 if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !instalada) $("install").hidden = false;
+
+// Aviso cuando la app se ha actualizado. Hay que cambiar APP_VERSION en cada actualización.
+const APP_VERSION = "2026.09.19-3";
+(() => {
+  const prev = leer("version");
+  guardar("version", APP_VERSION);
+  const yaUsada = prev !== null || leer("ultimo") !== null || leer("abierta") !== null;  // no avisar la primera vez que se instala
+  guardar("abierta", "1");
+  if (prev !== APP_VERSION && yaUsada){
+    const t = $("toast");
+    t.textContent = "TELE-LORENZITO se ha actualizado";
+    t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 4000);
+  }
+})();
 
 $("anio").textContent = new Date().getFullYear();
 pintar();
