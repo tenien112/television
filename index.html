@@ -249,8 +249,37 @@ $("install").onclick = async () => {
 const instalada = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
 if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !instalada) $("install").hidden = false;
 
+// VENTANA FLOTANTE: que siga abierta hasta que la cierres tú
+const enPiP = () => document.pictureInPictureElement === video;
+const viendo = () => !!actual && !video.paused;
+function avisar(t){
+  const el = $("toast"); el.textContent = t; el.classList.add("show");
+  clearTimeout(avisar.t); avisar.t = setTimeout(() => el.classList.remove("show"), 5000);
+}
+try{ video.autoPictureInPicture = true; video.setAttribute("autopictureinpicture", ""); }catch(e){}
+if ("mediaSession" in navigator){
+  // Android/Chrome: al salir de la app con la tele puesta, pasa sola a ventana flotante
+  try{ navigator.mediaSession.setActionHandler("enterpictureinpicture", () => video.requestPictureInPicture().catch(() => {})); }catch(e){}
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && viendo() && !enPiP() && document.pictureInPictureEnabled) video.requestPictureInPicture().catch(() => {});
+});
+video.addEventListener("leavepictureinpicture", () => { if (document.hidden) video.pause(); });  // la cierras tú con la ✕: se para
+
+// Botón atrás de Android: con la tele puesta no cierra la app de golpe (y con la ventana flotante, nunca)
+let atrasAviso = 0, atrasTimer;
+function frenoAtras(){ if (!(history.state && history.state.tele)) history.pushState({tele: 1}, ""); }
+video.addEventListener("playing", frenoAtras);
+video.addEventListener("enterpictureinpicture", frenoAtras);
+window.addEventListener("popstate", () => {
+  if (enPiP()){ frenoAtras(); avisar("La ventana flotante sigue abierta. Ciérrala con su ✕ o sal con el botón de inicio."); return; }
+  if (!viendo()) return;  // sin nada en marcha, atrás funciona normal
+  avisar("Pulsa atrás otra vez para cerrar la tele. Con el botón de inicio sigue en ventana flotante.");
+  clearTimeout(atrasTimer); atrasTimer = setTimeout(() => { if (viendo() || enPiP()) frenoAtras(); }, 4000);
+});
+
 // Aviso cuando la app se ha actualizado. Hay que cambiar APP_VERSION en cada actualización.
-const APP_VERSION = "2026.09.19-3";
+const APP_VERSION = "2026.09.19-4";
 (() => {
   const prev = leer("version");
   guardar("version", APP_VERSION);
