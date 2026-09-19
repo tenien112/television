@@ -62,6 +62,12 @@ button:focus-visible{outline:3px solid var(--ext);outline-offset:2px}
 footer{text-align:center;color:var(--muted);font-size:.8rem;padding:18px 16px calc(24px + env(safe-area-inset-bottom,0px))}
 .toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 16px);transform:translate(-50%,-20px);max-width:92%;width:max-content;padding:10px 16px;border-radius:12px;background:var(--panel);color:var(--text);border:1px solid var(--line);font-size:.9rem;text-align:center;box-shadow:0 8px 28px rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:50}
 .toast.show{opacity:1;transform:translate(-50%,0)}
+/* App Android: en ventana flotante solo se ve la imagen */
+body.modo-pip header, body.modo-pip .install, body.modo-pip .barra, body.modo-pip main, body.modo-pip footer, body.modo-pip .toast{display:none}
+body.modo-pip .pantalla{position:fixed;inset:0;padding:0;max-width:none;background:#000}
+body.modo-pip .marco{height:100vh;aspect-ratio:auto;border:0;border-radius:0}
+.apk{display:inline-block;margin-bottom:10px;color:var(--ext);text-decoration:none;font-weight:600}
+.apk[hidden]{display:none}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -94,7 +100,7 @@ footer{text-align:center;color:var(--muted);font-size:.8rem;padding:18px 16px ca
   <div class="lista" id="listaWeb"></div>
 </main>
 
-<footer>© <span id="anio">2026</span> Lorenzo Moreno. Todos los derechos reservados.</footer>
+<footer><a class="apk" id="apk" href="https://github.com/tenien112/television/releases/latest/download/TELE-LORENZITO.apk" hidden>📦 Descargar la app Android (APK)</a><br>© <span id="anio">2026</span> Lorenzo Moreno. Todos los derechos reservados.</footer>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
@@ -137,6 +143,7 @@ const CANALES = [
 ];
 
 const $ = id => document.getElementById(id);
+const APK = !!window.AndroidTele;  // true cuando se abre dentro de la app Android
 const video = $("video");
 let hls = null, actual = null;
 function leer(k){ try{ return localStorage.getItem("tele_" + k); }catch(e){ return null; } }
@@ -166,7 +173,7 @@ function estado(t){ $("estado").textContent = t; }
 
 function abrirWeb(c){
   estado("Abriendo " + c.nombre + "…");
-  window.open(c.web, "_blank", "noopener");
+  if (APK) AndroidTele.abrir(c.web); else window.open(c.web, "_blank", "noopener");
   setTimeout(() => estado(actual ? actual.nombre : "Elige un canal"), 2500);
 }
 
@@ -227,12 +234,19 @@ $("full").onclick = async () => {
 };
 document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) screen.orientation?.unlock?.(); });
 $("pip").onclick = async () => {
+  if (APK){ AndroidTele.flotante(); return; }  // en la app Android, ventana flotante nativa
   try{
     if (document.pictureInPictureElement) await document.exitPictureInPicture();
     else await video.requestPictureInPicture();
   }catch(e){ estado("Ventana flotante no disponible"); }
 };
-if (!document.pictureInPictureEnabled) $("pip").disabled = true;
+if (!document.pictureInPictureEnabled && !APK) $("pip").disabled = true;
+if (APK){
+  const avisa = p => { try{ AndroidTele.reproduciendo(p); }catch(e){} };  // la app Android sabe si hay tele puesta
+  video.addEventListener("playing", () => avisa(true));
+  video.addEventListener("pause", () => avisa(false));
+  video.addEventListener("ended", () => avisa(false));
+} else if (/android/i.test(navigator.userAgent)) $("apk").hidden = false;
 if ("mediaSession" in navigator){
   try{ navigator.mediaSession.setActionHandler("previoustrack", () => saltar(-1)); }catch(e){}
   try{ navigator.mediaSession.setActionHandler("nexttrack", () => saltar(1)); }catch(e){}
@@ -278,7 +292,7 @@ window.addEventListener("popstate", () => {
 });
 
 // Aviso cuando la app se ha actualizado. Hay que cambiar APP_VERSION en cada actualización.
-const APP_VERSION = "2026.09.19-4";
+const APP_VERSION = "2026.09.19-5";
 (() => {
   const prev = leer("version");
   guardar("version", APP_VERSION);
