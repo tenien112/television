@@ -264,7 +264,6 @@ if ("mediaSession" in navigator){
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && viendo() && !enPiP() && document.pictureInPictureEnabled) video.requestPictureInPicture().catch(() => {});
 });
-video.addEventListener("leavepictureinpicture", () => { if (document.hidden) video.pause(); });  // la cierras tú con la ✕: se para
 
 // Botón atrás de Android: con la tele puesta no cierra la app de golpe (y con la ventana flotante, nunca)
 let atrasAviso = 0, atrasTimer;
