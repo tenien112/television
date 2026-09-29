@@ -68,6 +68,38 @@ body.modo-pip .pantalla{position:fixed;inset:0;padding:0;max-width:none;backgrou
 body.modo-pip .marco{height:100vh;aspect-ratio:auto;border:0;border-radius:0}
 .apk{display:inline-block;margin-bottom:10px;color:var(--ext);text-decoration:none;font-weight:600}
 .apk[hidden]{display:none}
+/* ===== MODO TELE: Mi Box / Google TV, se maneja con el mando ===== */
+body.tv{height:100vh;overflow:hidden;display:grid;grid-template-columns:minmax(0,62fr) minmax(0,38fr);grid-template-rows:auto minmax(0,1fr);column-gap:2.5vw;padding:3vh 3.5vw 0}
+body.tv header{grid-column:1/-1;max-width:none;margin:0;padding:0 0 2.2vh}
+body.tv h1{font-size:5vh}
+body.tv #estado{font-size:2.5vh}
+body.tv .install, body.tv footer, body.tv #pip{display:none}
+body.tv .pantalla{position:static;grid-column:1;grid-row:2;max-width:none;margin:0;padding:0}
+body.tv .marco{border-radius:1.6vh}
+body.tv .aviso{font-size:2.8vh}
+body.tv .barra{margin-top:2.2vh;gap:1.2vw}
+body.tv .barra button{width:8vh;height:8vh;font-size:3.2vh;border-radius:1.4vh}
+body.tv .nombre .dial{font-size:5.5vh}
+body.tv .nombre span{font-size:3.2vh}
+body.tv main{grid-column:2;grid-row:2;max-width:none;margin:0;padding:.6vh 1vw 6vh .6vw;overflow-y:auto;scrollbar-width:none}
+body.tv main::-webkit-scrollbar{display:none}
+body.tv h2{font-size:2.3vh;margin:2.2vh 0 1.2vh}
+body.tv .lista{gap:1.1vh}
+body.tv .canal{padding:1.3vh 1.3vw;border-radius:1.4vh;gap:1.3vw}
+body.tv .canal .dial{font-size:3.8vh}
+body.tv .canal b{font-size:2.7vh}
+body.tv .canal small, body.tv .canal .tipo{font-size:2vh}
+body.tv button:focus{outline:.55vh solid var(--ext);outline-offset:.3vh}
+body.tv .canal:focus{background:var(--panel)}
+body.tv .toast{font-size:2.8vh;padding:1.6vh 2.2vw;top:4vh}
+.rotulo{position:absolute;left:3%;top:5%;display:flex;align-items:baseline;gap:.6em;padding:.5em .9em;border-radius:.4em;background:rgba(16,26,46,.85);font-weight:600;font-size:3vh;opacity:0;transition:opacity .3s;pointer-events:none}
+.rotulo i{font-family:var(--cond);font-style:normal;font-weight:700;font-size:1.8em;line-height:1;color:var(--live)}
+.rotulo.show{opacity:1}
+/* Pantalla completa en la tele: arriba/abajo cambia de canal, OK o atrás vuelve a la lista */
+body.tv.tv-full .pantalla{position:fixed;inset:0;z-index:20;background:#000}
+body.tv.tv-full .marco{width:100vw;height:100vh;aspect-ratio:auto;border:0;border-radius:0}
+body.tv.tv-full .barra{display:none}
+body.tv.tv-full .rotulo{font-size:4vh}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -144,6 +176,11 @@ const CANALES = [
 
 const $ = id => document.getElementById(id);
 const APK = !!window.AndroidTele;  // true cuando se abre dentro de la app Android
+// true en la tele (Mi Box / Google TV): la app Android lo dice, y si no, se mira el navegador
+const TV = (() => {
+  try{ if (APK && AndroidTele.esTele && AndroidTele.esTele()) return true; }catch(e){}
+  return /TELE-LORENZITO-TV|Android TV|GoogleTV|MIBOX|AFT[A-Z]|BRAVIA|SMART-TV/i.test(navigator.userAgent);
+})();
 const video = $("video");
 let hls = null, actual = null;
 function leer(k){ try{ return localStorage.getItem("tele_" + k); }catch(e){ return null; } }
@@ -162,7 +199,11 @@ function pintar(){
       b.querySelector("b").textContent = c.nombre;
       b.querySelector("small").textContent = c.info;
       b.querySelector(".tipo").textContent = c.tipo === "app" ? "En directo" : "Abre su web";
-      b.onclick = () => c.tipo === "app" ? ver(c) : abrirWeb(c);
+      b.onclick = () => {
+        if (c.tipo !== "app") return abrirWeb(c);
+        if (TV && actual && actual.id === c.id && !video.paused) return pantallaTele(true);  // OK otra vez: a pantalla completa
+        ver(c);
+      };
       caja.append(b);
     });
   }
@@ -189,6 +230,7 @@ function ver(c, n = 0){
   pintar(); parar();
   const url = c.urls[n];
   mostrarAviso("Sintonizando " + c.nombre + "…"); estado("Sintonizando…");
+  if (TV) rotuloTele(c);
   const listo = () => { mostrarAviso(""); estado("En directo"); };
   const fallo = () => {
     if (actual !== c) return;
@@ -226,6 +268,7 @@ $("ant").onclick = () => saltar(-1);
 $("sig").onclick = () => saltar(1);
 
 $("full").onclick = async () => {
+  if (TV){ pantallaTele(true); return; }  // en la tele la app ya ocupa toda la pantalla
   const m = document.querySelector(".marco");
   try{
     if (document.fullscreenElement) await document.exitFullscreen();
@@ -281,7 +324,7 @@ document.addEventListener("visibilitychange", () => {
 
 // Botón atrás de Android: con la tele puesta no cierra la app de golpe (y con la ventana flotante, nunca)
 let atrasAviso = 0, atrasTimer;
-function frenoAtras(){ if (!(history.state && history.state.tele)) history.pushState({tele: 1}, ""); }
+function frenoAtras(){ if (TV) return; if (!(history.state && history.state.tele)) history.pushState({tele: 1}, ""); }
 video.addEventListener("playing", frenoAtras);
 video.addEventListener("enterpictureinpicture", frenoAtras);
 window.addEventListener("popstate", () => {
@@ -291,8 +334,85 @@ window.addEventListener("popstate", () => {
   clearTimeout(atrasTimer); atrasTimer = setTimeout(() => { if (viendo() || enPiP()) frenoAtras(); }, 4000);
 });
 
+// ===== MANDO DE LA TELE =====
+// Flechas: moverse. OK: ver el canal (OK otra vez: pantalla completa). Atrás: salir de pantalla completa.
+// En pantalla completa: arriba/abajo cambian de canal. Si el mando tiene números, se marca el canal.
+const tvFull = () => document.body.classList.contains("tv-full");
+function enfocables(){ return [...document.querySelectorAll(".barra button:not(:disabled), .canal")].filter(b => b.offsetParent !== null); }
+function enfocar(b){ if (!b) return; b.focus({preventScroll: true}); b.scrollIntoView({block: "center", behavior: "smooth"}); }
+function focoInicial(){ enfocar(document.querySelector(".canal.activo") || document.querySelector(".canal")); }
+function mover(dir){
+  const a = document.activeElement, lista = enfocables();
+  if (!lista.includes(a)) return focoInicial();
+  const r = a.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const vertical = dir === "up" || dir === "down";
+  let mejor = null, dm = Infinity;
+  for (const b of lista){
+    if (b === a) continue;
+    const s = b.getBoundingClientRect(), dx = s.left + s.width / 2 - cx, dy = s.top + s.height / 2 - cy;
+    const vale = dir === "up" ? dy < -4 : dir === "down" ? dy > 4 : dir === "left" ? dx < -4 : dx > 4;
+    if (!vale) continue;
+    const d = vertical ? Math.abs(dy) + Math.abs(dx) * 3 : Math.abs(dx) + Math.abs(dy) * 3;
+    if (d < dm){ dm = d; mejor = b; }
+  }
+  enfocar(mejor);
+}
+function pantallaTele(si){
+  document.body.classList.toggle("tv-full", si);
+  if (si){ if (actual) rotuloTele(actual); }
+  else setTimeout(focoInicial, 50);
+}
+function rotuloTele(c, texto){
+  let el = document.querySelector(".rotulo");
+  if (!el){ el = document.createElement("div"); el.className = "rotulo"; el.innerHTML = "<i></i><span></span>"; document.querySelector(".marco").append(el); }
+  el.querySelector("i").textContent = c ? c.dial : texto;
+  el.querySelector("span").textContent = c ? c.nombre : "";
+  el.classList.add("show");
+  clearTimeout(rotuloTele.t); rotuloTele.t = setTimeout(() => el.classList.remove("show"), 3500);
+}
+let cifras = "", cifrasT;
+function marcar(d){
+  cifras = (cifras + d).slice(-2); rotuloTele(null, cifras);
+  clearTimeout(cifrasT);
+  cifrasT = setTimeout(() => {
+    const c = CANALES.find(x => x.dial === cifras); cifras = "";
+    if (!c) return avisar("No hay canal con ese número");
+    c.tipo === "app" ? ver(c) : abrirWeb(c);
+  }, 1500);
+}
+function pausaTele(){ if (!actual) return; if (video.paused) video.play().catch(() => {}); else video.pause(); }
+if (TV){
+  document.body.classList.add("tv");
+  video.removeAttribute("controls");
+  mostrarAviso("Elige un canal con punto rojo y pulsa OK");
+  document.addEventListener("keydown", e => {
+    const k = e.key;
+    if (/^[0-9]$/.test(k)){ e.preventDefault(); return marcar(k); }
+    if (k === "MediaPlayPause" || k === "MediaPlay" || k === "MediaPause"){ e.preventDefault(); return pausaTele(); }
+    if (tvFull()){
+      if (k === "ArrowUp" || k === "ChannelUp" || k === "PageUp"){ e.preventDefault(); saltar(1); }
+      else if (k === "ArrowDown" || k === "ChannelDown" || k === "PageDown"){ e.preventDefault(); saltar(-1); }
+      else if (k === "Enter" || k === "Escape" || k === "Backspace"){ e.preventDefault(); pantallaTele(false); }
+      else if (k === "ArrowLeft" || k === "ArrowRight"){ e.preventDefault(); if (actual) rotuloTele(actual); }
+      return;
+    }
+    const dir = {ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right"}[k];
+    if (dir){ e.preventDefault(); return mover(dir); }
+    if (k === "Enter" && !enfocables().includes(document.activeElement)){ e.preventDefault(); focoInicial(); }
+  });
+  // La app Android llama a estas dos: botón atrás y botones de canal/multimedia del mando
+  window.teleAtras = () => { if (tvFull()){ pantallaTele(false); return true; } return false; };
+  window.teleNativo = cmd => {
+    if (cmd === "sig") saltar(1);
+    else if (cmd === "ant") saltar(-1);
+    else if (cmd === "pausa") pausaTele();
+    else if (cmd === "parar") video.pause();
+  };
+  setTimeout(focoInicial, 300);
+}
+
 // Aviso cuando la app se ha actualizado. Hay que cambiar APP_VERSION en cada actualización.
-const APP_VERSION = "2026.09.19-6";
+const APP_VERSION = "2026.09.29-1";
 (() => {
   const prev = leer("version");
   guardar("version", APP_VERSION);
@@ -310,7 +430,7 @@ const APP_VERSION = "2026.09.19-6";
 $("anio").textContent = new Date().getFullYear();
 pintar();
 const ult = CANALES.find(c => c.id === leer("ultimo") && c.tipo === "app");
-if (ult){ actual = ult; $("actual").textContent = ult.nombre; $("dialActual").textContent = ult.dial; pintar(); mostrarAviso("Toca " + ult.nombre + " abajo para volver a verlo"); }
+if (ult){ actual = ult; $("actual").textContent = ult.nombre; $("dialActual").textContent = ult.dial; pintar(); mostrarAviso(TV ? "Pulsa OK en " + ult.nombre + " para volver a verlo" : "Toca " + ult.nombre + " abajo para volver a verlo"); }
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
 </body>
