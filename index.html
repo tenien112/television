@@ -100,6 +100,13 @@ body.tv.tv-full .pantalla{position:fixed;inset:0;z-index:20;background:#000}
 body.tv.tv-full .marco{width:100vw;height:100vh;aspect-ratio:auto;border:0;border-radius:0}
 body.tv.tv-full .barra{display:none}
 body.tv.tv-full .rotulo{font-size:4vh}
+/* Proyectar en la tele (Mi Box / Chromecast) */
+.barra button.cast svg, .canal .cast svg{width:22px;height:22px;display:block;margin:auto;fill:currentColor}
+.barra button.cast.on{color:var(--live);border-color:var(--live)}
+.canal .cast{flex:none;display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:9px;border:1px solid var(--line);color:var(--muted)}
+.canal .cast:hover{color:var(--text);border-color:var(--muted)}
+body.casting .canal.activo .cast{color:var(--live);border-color:var(--live)}
+body.tv .cast{display:none!important}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -119,6 +126,7 @@ body.tv.tv-full .rotulo{font-size:4vh}
   <div class="barra">
     <button id="ant" aria-label="Canal anterior">◀</button>
     <div class="nombre"><i class="dial" id="dialActual"></i><span id="actual">Sin canal</span></div>
+    <button id="cast" class="cast" aria-label="Proyectar en la tele" title="Proyectar en la tele (Mi Box)"></button>
     <button id="pip" aria-label="Ventana flotante" title="Ventana flotante">⧉</button>
     <button id="full" aria-label="Pantalla completa" title="Pantalla completa">⛶</button>
     <button id="sig" aria-label="Canal siguiente">▶</button>
@@ -136,6 +144,8 @@ body.tv.tv-full .rotulo{font-size:4vh}
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
+<script>window.__onGCastApiAvailable = ok => { window.castListo = ok; if (ok && window.iniciarCast) iniciarCast(); };</script>
+<script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1" async></script>
 <script>
 /* CANALES DE LA TDT NACIONAL (y La 7 de la Región de Murcia)
    tipo "app": señal abierta y oficial, se ve dentro de la app (si falla un enlace, prueba el siguiente).
@@ -148,7 +158,7 @@ const CANALES = [
   {id:"cuatro", dial:"4",  nombre:"Cuatro",         info:"Mediaset Infinity",    tipo:"web", web:"https://www.mediasetinfinity.es/directo/cuatro/"},
   {id:"t5",     dial:"5",  nombre:"Telecinco",      info:"Mediaset Infinity",    tipo:"web", web:"https://www.mediasetinfinity.es/directo/telecinco/"},
   {id:"sexta",  dial:"6",  nombre:"laSexta",        info:"Atresplayer",          tipo:"web", web:"https://www.atresplayer.com/directos/lasexta/"},
-  {id:"la7",    dial:"7",  nombre:"La 7",           info:"Región de Murcia",     tipo:"web", web:"https://www.la7tv.es/video/a-la-carta/la-7-en-directo/20250311215529052374.html"},
+  {id:"la7",    dial:"7",  nombre:"La 7",           info:"Región de Murcia",     tipo:"web", web:"https://www.la7tv.es/video/a-la-carta/7tv-en-directo/20220810150726000939.html"},
   {id:"h24",    dial:"8",  nombre:"24h",            info:"Noticias de RTVE",     tipo:"app", urls:["https://ztnr.rtve.es/ztnr/1694255.m3u8", RTVE+"24h/24h_main_dvr.m3u8"]},
   {id:"clan",   dial:"9",  nombre:"Clan",           info:"Infantil de RTVE",     tipo:"app", urls:["https://ztnr.rtve.es/ztnr/5466990.m3u8", RTVE+"clan/clan_main_dvr.m3u8"]},
   {id:"tdp",    dial:"10", nombre:"Teledeporte",    info:"Deportes de RTVE",     tipo:"app", urls:[RTVE+"tdp/tdp_main.m3u8"]},
@@ -175,6 +185,7 @@ const CANALES = [
 ];
 
 const $ = id => document.getElementById(id);
+const ICONO_CAST = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 18v3h3a3 3 0 0 0-3-3zm0-4v2a5 5 0 0 1 5 5h2a7 7 0 0 0-7-7zm0-4v2a9 9 0 0 1 9 9h2A11 11 0 0 0 1 10zm20-7H3a2 2 0 0 0-2 2v3h2V5h18v14h-7v2h7a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z"/></svg>';
 const APK = !!window.AndroidTele;  // true cuando se abre dentro de la app Android
 // true en la tele (Mi Box / Google TV): la app Android lo dice, y si no, se mira el navegador
 const TV = (() => {
@@ -194,7 +205,8 @@ function pintar(){
       const b = document.createElement("button");
       b.type = "button";
       b.className = "canal " + c.tipo + (actual && actual.id === c.id ? " activo" : "");
-      b.innerHTML = '<span class="dial"></span><span class="txt"><b></b><small></small></span><span class="tipo"></span>';
+      b.innerHTML = '<span class="dial"></span><span class="txt"><b></b><small></small></span><span class="tipo"></span><span class="cast" role="button" aria-label="Proyectar en la tele" title="Proyectar en la tele">' + ICONO_CAST + '</span>';
+      b.querySelector(".cast").onclick = ev => { ev.stopPropagation(); proyectarCanal(c); };
       b.querySelector(".dial").textContent = c.dial;
       b.querySelector("b").textContent = c.nombre;
       b.querySelector("small").textContent = c.info;
@@ -224,11 +236,17 @@ function parar(){
   video.removeAttribute("src"); video.load();
 }
 
-function ver(c, n = 0){
+async function ver(c, n = 0){
   actual = c; guardar("ultimo", c.id);
   $("actual").textContent = c.nombre; $("dialActual").textContent = c.dial;
   pintar(); parar();
   const url = c.urls[n];
+  if (!url){
+    if (c.web){ mostrarAviso(c.nombre + ": hoy no da enlace directo. Abriendo su web…"); estado("Abriendo web"); setTimeout(() => { if (actual === c) abrirWeb(c); }, 1200); }
+    else { mostrarAviso(c.nombre + " no responde ahora."); estado("Sin señal"); }
+    return;
+  }
+  if (castSesion()){ mandarATele(c, url); return; }  // estamos proyectando: el canal va a la tele
   mostrarAviso("Sintonizando " + c.nombre + "…"); estado("Sintonizando…");
   if (TV) rotuloTele(c);
   const listo = () => { mostrarAviso(""); estado("En directo"); };
@@ -411,8 +429,107 @@ if (TV){
   setTimeout(focoInicial, 300);
 }
 
+// ===== PROYECTAR EN LA TELE (Mi Box / Chromecast / tele con Chromecast) =====
+$("cast").innerHTML = ICONO_CAST;
+let castCtx = null;
+function castSesion(){ try{ return castCtx && castCtx.getCurrentSession(); }catch(e){ return null; } }
+window.iniciarCast = () => {
+  if (castCtx || !window.cast || !cast.framework) return;
+  castCtx = cast.framework.CastContext.getInstance();
+  castCtx.setOptions({receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID, autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED});
+  castCtx.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, e => {
+    const S = cast.framework.SessionState;
+    if (e.sessionState === S.SESSION_STARTED || e.sessionState === S.SESSION_RESUMED) marcaCast(true);
+    if (e.sessionState === S.SESSION_ENDED){ marcaCast(false); if (actual && actual.tipo === "app") ver(actual); }
+  });
+};
+if (window.castListo) iniciarCast();
+function marcaCast(si){
+  document.body.classList.toggle("casting", si);
+  $("cast").classList.toggle("on", si);
+  if (!si){ mostrarAviso(""); return; }
+  let nombre = "la tele"; try{ nombre = castSesion().getCastDevice().friendlyName || nombre; }catch(e){}
+  $("cast").title = "Proyectando en " + nombre + " (toca para parar)";
+}
+function explicarCompartir(extra){
+  avisar((extra ? extra + " " : "") + "Para mandar la pantalla a la tele: baja la barra de arriba del móvil y pulsa «Smart View» (o «Enviar pantalla») y elige tu Mi Box.");
+}
+async function mandarATele(c, url){
+  const s = castSesion(); if (!s) return;
+  parar();
+  const info = new chrome.cast.media.MediaInfo(url, "application/x-mpegurl");
+  info.streamType = chrome.cast.media.StreamType.LIVE;
+  try{ info.hlsSegmentFormat = chrome.cast.media.HlsSegmentFormat.TS; }catch(e){}
+  const meta = new chrome.cast.media.GenericMediaMetadata();
+  meta.title = c.nombre; meta.subtitle = "TELE-LORENZITO";
+  meta.images = [new chrome.cast.Image(new URL("icon-512.png", location.href).href)];
+  info.metadata = meta;
+  const req = new chrome.cast.media.LoadRequest(info); req.autoplay = true;
+  let nombre = "la tele"; try{ nombre = s.getCastDevice().friendlyName || nombre; }catch(e){}
+  mostrarAviso("📺 " + c.nombre + " se está viendo en " + nombre); estado("Proyectando");
+  try{ await s.loadMedia(req); }
+  catch(e){ mostrarAviso(c.nombre + " no se deja proyectar así. Prueba con Smart View."); explicarCompartir(); }
+}
+async function proyectarCanal(c){
+  if (c.tipo !== "app"){  // sin señal abierta: su web oficial trae su propio botón de enviar, o se comparte la pantalla
+    avisar("Se abre " + c.nombre + ": en su reproductor pulsa el icono de enviar ⎚, o comparte la pantalla con Smart View.");
+    return setTimeout(() => abrirWeb(c), 1800);
+  }
+  if (APK) return explicarCompartir();  // dentro de la app Android no hay Chromecast: se comparte pantalla
+  if (!castCtx){ iniciarCast(); }
+  if (!castCtx) return explicarCompartir("Este navegador no puede enviar directamente (usa Chrome).");
+  if (!castSesion()){
+    try{ await castCtx.requestSession(); }
+    catch(e){ if (e !== "cancel" && e !== chrome.cast.ErrorCode.CANCEL) explicarCompartir("No encuentro la Mi Box en el Wi-Fi."); return; }
+  }
+  ver(c);
+}
+$("cast").onclick = () => {
+  if (castSesion()){ castCtx.endCurrentSession(true); return; }  // ya proyectando: parar
+  if (actual) proyectarCanal(actual);
+  else avisar("Elige primero un canal con punto rojo y vuelve a pulsar ⎚");
+};
+
+// ===== REFRESCO DE ENLACES AL ARRANCAR =====
+// Mira listas públicas actualizadas y comprueba qué enlaces responden; los que van se ponen primero.
+const IPTV_IDS = {la1:"La1.es", la2:"La2.es", h24:"24Horas.es", clan:"Clan.es", tdp:"Teledeporte.es", trece:"Trece.es", toro:"ElToroTV.es", rmtv:"RealMadridTV.es"};
+async function conTiempo(url, ms){
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
+  try{ const r = await fetch(url, {signal: ctl.signal, cache: "no-store"}); return r; } finally { clearTimeout(t); }
+}
+async function vivo(url){
+  try{ const r = await conTiempo(url, 6000); if (!r.ok) return false; const t = await r.text(); return t.includes("#EXTM3U"); }catch(e){ return false; }
+}
+async function refrescarEnlaces(){
+  estado("Refrescando enlaces…");
+  try{
+    const r = await conTiempo("https://raw.githubusercontent.com/iptv-org/iptv/master/streams/es.m3u", 8000);
+    const lineas = (await r.text()).split(/\r?\n/);
+    for (let i = 0; i < lineas.length; i++){
+      const m = lineas[i].match(/tvg-id="([^"@]+)/); if (!m) continue;
+      let j = i + 1; while (j < lineas.length && lineas[j].startsWith("#")) j++;
+      const url = (lineas[j] || "").trim();
+      if (!/^https:\/\/.+\.m3u8/.test(url)) continue;
+      for (const [id, tvg] of Object.entries(IPTV_IDS)) if (m[1] === tvg){
+        const c = CANALES.find(x => x.id === id); if (c && !c.urls.includes(url)) c.urls.push(url);
+      }
+    }
+  }catch(e){}
+  const tareas = enApp().map(async c => {
+    const ok = [];
+    for (const u of c.urls){ if (await vivo(u)){ ok.push(u); if (ok.length >= 1) break; } }
+    if (ok.length) c.urls = [...ok, ...c.urls.filter(u => !ok.includes(u))];
+    c.sinSenal = !ok.length;
+    return ok.length > 0;
+  });
+  const res = await Promise.all(tareas);
+  const buenos = res.filter(Boolean).length;
+  if (!actual || video.paused) estado(buenos + " de " + res.length + " canales con señal");
+  setTimeout(() => { if (!actual || video.paused) estado(actual ? actual.nombre : "Elige un canal"); }, 5000);
+}
+
 // Aviso cuando la app se ha actualizado. Hay que cambiar APP_VERSION en cada actualización.
-const APP_VERSION = "2026.09.29-1";
+const APP_VERSION = "2026.09.29-2";
 (() => {
   const prev = leer("version");
   guardar("version", APP_VERSION);
@@ -432,6 +549,7 @@ pintar();
 const ult = CANALES.find(c => c.id === leer("ultimo") && c.tipo === "app");
 if (ult){ actual = ult; $("actual").textContent = ult.nombre; $("dialActual").textContent = ult.dial; pintar(); mostrarAviso(TV ? "Pulsa OK en " + ult.nombre + " para volver a verlo" : "Toca " + ult.nombre + " abajo para volver a verlo"); }
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+refrescarEnlaces();
 </script>
 </body>
 </html>
