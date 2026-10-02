@@ -500,36 +500,64 @@ async function conTiempo(url, ms){
 async function vivo(url){
   try{ const r = await conTiempo(url, 6000); if (!r.ok) return false; const t = await r.text(); return t.includes("#EXTM3U"); }catch(e){ return false; }
 }
+const norm = t => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+function meter(c, url){
+  if (!url || url.includes("[") || c.urls && c.urls.includes(url)) return;
+  if (!c.urls) c.urls = [];
+  c.urls.push(url);
+  if (c.tipo === "web") c.tipo = "app";  // la cadena ha abierto señal: se ve dentro de la app (y si falla, abre su web)
+}
+// Fuente 1: TDTChannels (lista española, se actualiza casi a diario). Busca TODOS los canales por su nombre.
+async function deTDTChannels(){
+  const r = await conTiempo("https://raw.githubusercontent.com/LaQuay/TDTChannels/master/TELEVISION.md", 8000);
+  const vistos = new Set();
+  for (const l of (await r.text()).split(/\r?\n/)){
+    if (!l.startsWith("| ")) continue;
+    const celdas = l.split("|"); const nom = norm(celdas[1]);
+    if (!nom || vistos.has(nom)) continue;
+    const c = CANALES.find(x => norm(x.nombre) === nom); if (!c) continue;
+    vistos.add(nom);
+    for (const m of (celdas[2] || "").matchAll(/\((https:[^)\s]+\.m3u8[^)\s]*)\)/g)) meter(c, m[1]);
+  }
+}
+// Fuente 2: iptv-org (lista mundial), por si la primera falla.
+async function deIptvOrg(){
+  const r = await conTiempo("https://raw.githubusercontent.com/iptv-org/iptv/master/streams/es.m3u", 8000);
+  const lineas = (await r.text()).split(/\r?\n/);
+  for (let i = 0; i < lineas.length; i++){
+    const m = lineas[i].match(/tvg-id="([^"@]+)/); if (!m) continue;
+    let j = i + 1; while (j < lineas.length && lineas[j].startsWith("#")) j++;
+    const url = (lineas[j] || "").trim();
+    if (!/^https:\/\/.+\.m3u8/.test(url)) continue;
+    for (const [id, tvg] of Object.entries(IPTV_IDS)) if (m[1] === tvg){ const c = CANALES.find(x => x.id === id); if (c) meter(c, url); }
+  }
+}
+let ultimoRefresco = 0;
 async function refrescarEnlaces(){
-  estado("Refrescando enlaces…");
-  try{
-    const r = await conTiempo("https://raw.githubusercontent.com/iptv-org/iptv/master/streams/es.m3u", 8000);
-    const lineas = (await r.text()).split(/\r?\n/);
-    for (let i = 0; i < lineas.length; i++){
-      const m = lineas[i].match(/tvg-id="([^"@]+)/); if (!m) continue;
-      let j = i + 1; while (j < lineas.length && lineas[j].startsWith("#")) j++;
-      const url = (lineas[j] || "").trim();
-      if (!/^https:\/\/.+\.m3u8/.test(url)) continue;
-      for (const [id, tvg] of Object.entries(IPTV_IDS)) if (m[1] === tvg){
-        const c = CANALES.find(x => x.id === id); if (c && !c.urls.includes(url)) c.urls.push(url);
-      }
-    }
-  }catch(e){}
+  ultimoRefresco = Date.now();
+  estado("Buscando enlaces nuevos…");
+  // primero los últimos enlaces buenos que se encontraron (por si hoy fallan las listas)
+  try{ const g = JSON.parse(leer("enlaces") || "{}"); for (const [id, us] of Object.entries(g)){ const c = CANALES.find(x => x.id === id); if (c) us.forEach(u => meter(c, u)); } }catch(e){}
+  await Promise.allSettled([deTDTChannels(), deIptvOrg()]);
   const tareas = enApp().map(async c => {
-    const ok = [];
-    for (const u of c.urls){ if (await vivo(u)){ ok.push(u); if (ok.length >= 1) break; } }
-    if (ok.length) c.urls = [...ok, ...c.urls.filter(u => !ok.includes(u))];
-    c.sinSenal = !ok.length;
-    return ok.length > 0;
+    let bueno = null;
+    for (const u of c.urls){ if (await vivo(u)){ bueno = u; break; } }
+    if (bueno) c.urls = [bueno, ...c.urls.filter(u => u !== bueno)];
+    c.sinSenal = !bueno;
+    return !!bueno;
   });
   const res = await Promise.all(tareas);
+  const g = {}; enApp().forEach(c => g[c.id] = c.urls.slice(0, 4)); guardar("enlaces", JSON.stringify(g));
+  pintar();
   const buenos = res.filter(Boolean).length;
   if (!actual || video.paused) estado(buenos + " de " + res.length + " canales con señal");
   setTimeout(() => { if (!actual || video.paused) estado(actual ? actual.nombre : "Elige un canal"); }, 5000);
 }
+// Al volver a la app (si ha pasado más de media hora), vuelve a buscar enlaces
+document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - ultimoRefresco > 30*60*1000) refrescarEnlaces(); });
 
 // Aviso cuando la app se ha actualizado. Hay que cambiar APP_VERSION en cada actualización.
-const APP_VERSION = "2026.09.29-2";
+const APP_VERSION = "2026.10.02-1";
 (() => {
   const prev = leer("version");
   guardar("version", APP_VERSION);
