@@ -56,6 +56,12 @@ h2{font-family:var(--body);font-weight:600;font-size:.95rem;color:var(--muted);m
 .canal.activo{background:var(--panel);border-color:var(--live)}
 .canal.activo .dial{color:var(--live)}
 button:focus-visible{outline:3px solid var(--ext);outline-offset:2px}
+.canal{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.canal.cogido{position:relative;z-index:3;background:var(--panel);border-color:var(--ext);box-shadow:0 8px 24px rgba(0,0,0,.6);transform:scale(1.03);transition:transform .15s}
+.canal.cogido .dial{color:var(--ext)}
+body.ordenando{cursor:grabbing}
+.pista{color:var(--muted);font-size:.82rem;margin:2px 0 0;text-align:center}
+body.tv .pista{display:none}
 
 .install{display:block;width:calc(100% - 32px);max-width:728px;margin:0 auto 12px;padding:12px;border-radius:10px;border:1px solid var(--live);background:transparent;color:var(--text);font-weight:600;font-size:1rem;cursor:pointer}
 .install[hidden]{display:none}
@@ -139,6 +145,7 @@ body.tv .cast{display:none!important}
 
 <main>
   <button type="button" class="actualizar" id="actualizar">🔄 Actualizar canales (buscar cadenas nuevas)</button>
+  <p class="pista">Mantén pulsado un canal y arrástralo para cambiarlo de sitio</p>
   <h2>Se ven dentro de la app</h2>
   <div class="lista" id="listaApp"></div>
   <h2>Se abren en su web oficial</h2>
@@ -205,13 +212,26 @@ let hls = null, actual = null;
 function leer(k){ try{ return localStorage.getItem("tele_" + k); }catch(e){ return null; } }
 function guardar(k, v){ try{ localStorage.setItem("tele_" + k, v); }catch(e){} }
 const enApp = () => CANALES.filter(c => c.tipo === "app");
+// Orden de los canales a tu gusto (se guarda en el móvil)
+function aplicarOrden(){
+  let orden = []; try{ orden = JSON.parse(leer("orden") || "[]"); }catch(e){}
+  if (!orden.length) return;
+  const pos = id => { const i = orden.indexOf(id); return i < 0 ? 1e6 : i; };
+  const base = CANALES.map((c, i) => [c, i]);
+  base.sort((a, b) => (pos(a[0].id) - pos(b[0].id)) || (a[1] - b[1]));
+  CANALES.splice(0, CANALES.length, ...base.map(x => x[0]));
+}
+aplicarOrden();
 
+let arrastre = null, pintarLuego = false;
 function pintar(){
+  if (arrastre){ pintarLuego = true; return; }  // no rehacer la lista mientras mueves un canal
   for (const [tipo, caja] of [["app", $("listaApp")], ["web", $("listaWeb")]]){
     caja.innerHTML = "";
     CANALES.filter(c => c.tipo === tipo).forEach(c => {
       const b = document.createElement("button");
       b.type = "button";
+      b.dataset.id = c.id;
       b.className = "canal " + c.tipo + (actual && actual.id === c.id ? " activo" : "");
       b.innerHTML = '<span class="dial"></span><span class="txt"><b></b><small></small></span><span class="tipo"></span><span class="cast" role="button" aria-label="Proyectar en la tele" title="Proyectar en la tele">' + ICONO_CAST + '</span>';
       b.querySelector(".cast").onclick = ev => { ev.stopPropagation(); proyectarCanal(c); };
@@ -221,6 +241,7 @@ function pintar(){
       b.querySelector("small").textContent = c.info;
       b.querySelector(".tipo").textContent = c.tipo === "app" ? "En directo" : "Abre su web";
       b.onclick = () => {
+        if (Date.now() - soltadoEn < 400) return;  // acabas de soltar un canal movido: no lo abre
         if (c.tipo !== "app") return abrirWeb(c);
         if (TV && actual && actual.id === c.id && !video.paused) return pantallaTele(true);  // OK otra vez: a pantalla completa
         ver(c);
@@ -229,6 +250,62 @@ function pintar(){
     });
   }
 }
+
+// ===== MOVER CANALES: mantener pulsado ~0,6 s y arrastrar arriba o abajo =====
+let soltadoEn = 0;
+(() => {
+  let espera = null, ini = null;
+  const cancelar = () => { clearTimeout(espera); espera = null; };
+  document.addEventListener("pointerdown", e => {
+    const b = e.target.closest(".canal"); if (!b || e.target.closest(".cast") || TV) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    ini = {x: e.clientX, y: e.clientY};
+    cancelar();
+    espera = setTimeout(() => {
+      espera = null;
+      arrastre = {b, caja: b.parentElement, id: e.pointerId, y: ini.y};
+      b.classList.add("cogido"); document.body.classList.add("ordenando");
+      try{ navigator.vibrate && navigator.vibrate(30); }catch(_){}
+      bucleScroll();
+    }, 600);
+  });
+  document.addEventListener("pointermove", e => {
+    if (espera && ini && Math.hypot(e.clientX - ini.x, e.clientY - ini.y) > 10) cancelar();  // se está deslizando la lista
+    if (!arrastre) return;
+    arrastre.y = e.clientY; recolocar();
+  });
+  // mientras mueves un canal, la pantalla no se desliza sola con el dedo
+  document.addEventListener("touchmove", e => { if (arrastre) e.preventDefault(); }, {passive: false});
+  document.addEventListener("contextmenu", e => { if (e.target.closest(".canal")) e.preventDefault(); });
+  const soltar = () => {
+    cancelar();
+    if (!arrastre) return;
+    arrastre.b.classList.remove("cogido"); document.body.classList.remove("ordenando");
+    arrastre = null; soltadoEn = Date.now();
+    const ids = [...document.querySelectorAll("#listaApp .canal, #listaWeb .canal")].map(x => x.dataset.id);
+    guardar("orden", JSON.stringify(ids)); aplicarOrden();
+    if (pintarLuego){ pintarLuego = false; pintar(); }
+    avisar("Orden guardado");
+  };
+  document.addEventListener("pointerup", soltar);
+  document.addEventListener("pointercancel", soltar);
+  function recolocar(){
+    const {b, caja, y} = arrastre;
+    const ant = b.previousElementSibling, sig = b.nextElementSibling;
+    if (ant){ const r = ant.getBoundingClientRect(); if (y < r.top + r.height / 2){ caja.insertBefore(b, ant); return recolocar(); } }
+    if (sig){ const r = sig.getBoundingClientRect(); if (y > r.top + r.height / 2){ caja.insertBefore(sig, b); return recolocar(); } }
+  }
+  function bucleScroll(){  // cerca del borde, la lista se desplaza sola
+    if (!arrastre) return;
+    const arriba = document.querySelector(".pantalla").getBoundingClientRect().bottom;
+    const y = arrastre.y;
+    let v = 0;
+    if (y < arriba + 50) v = -Math.min(18, (arriba + 50 - y) / 3);
+    else if (y > innerHeight - 60) v = Math.min(18, (y - innerHeight + 60) / 3);
+    if (v){ scrollBy(0, v); recolocar(); }
+    requestAnimationFrame(bucleScroll);
+  }
+})();
 
 function mostrarAviso(t){ $("aviso").textContent = t; $("aviso").hidden = !t; }
 function estado(t){ $("estado").textContent = t; }
@@ -593,7 +670,7 @@ $("actualizar").onclick = () => refrescarEnlaces(true);
 document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - ultimoRefresco > 30*60*1000) refrescarEnlaces(); });
 
 // Aviso cuando la app se ha actualizado. Hay que cambiar APP_VERSION en cada actualización.
-const APP_VERSION = "2026.11.15-1";
+const APP_VERSION = "2026.11.15-2";
 (() => {
   const prev = leer("version");
   guardar("version", APP_VERSION);
